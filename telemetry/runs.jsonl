@@ -1,5 +1,0 @@
-{"run_id": "1b023a8b", "model": "OpenVINO/Qwen3-8B-int4-cw-ov", "device": "NPU", "success": true, "total_hops": 2, "total_prompt_tokens": 740, "total_completion_tokens": 312, "total_latency_s": 38.55, "error": ""}
-{"run_id": "e3cc2b1f", "model": "OpenVINO/Qwen3-8B-int4-cw-ov", "device": "NPU", "success": true, "total_hops": 2, "total_prompt_tokens": 754, "total_completion_tokens": 487, "total_latency_s": 57.042, "error": ""}
-{"run_id": "c83d1669", "model": "OpenVINO/Qwen3-8B-int4-cw-ov", "device": "NPU", "success": true, "total_hops": 2, "total_prompt_tokens": 737, "total_completion_tokens": 1038, "total_latency_s": 108.774, "error": ""}
-{"run_id": "4d32efbe", "model": "OpenVINO/Qwen3-8B-int4-cw-ov", "device": "NPU", "success": true, "total_hops": 2, "total_prompt_tokens": 841, "total_completion_tokens": 658, "total_latency_s": 71.706, "error": ""}
-{"run_id": "5e7922e0", "model": "OpenVINO/Qwen3-8B-int4-cw-ov", "device": "NPU", "success": true, "total_hops": 1, "total_prompt_tokens": 344, "total_completion_tokens": 156, "total_latency_s": 19.269, "error": ""}

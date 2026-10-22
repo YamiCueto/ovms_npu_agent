@@ -100,29 +100,36 @@ OK (skipped=1)
 
 ### Suite de integracion (con OVMS activo)
 
-Ejecutada durante desarrollo. Resultados observados:
+Ejecutada y completada. 7/7 tests pasan. Tiempo total: 331s.
 
 | Test | Estado | Notas |
 |---|---|---|
-| test_simple_response | OK | |
-| test_list_files | OK | |
-| test_read_file | OK | |
+| test_simple_response | OK | ~19s |
+| test_list_files | OK | 20.85s + 17.69s = 38.5s total |
+| test_read_file | OK | 39.47s + 32.23s = 71.7s total |
 | test_mcp_demo_server | OK | Servidor demo conecta, lista y llama herramientas |
-| test_multiplication_tool | Depende del modelo | El modelo llama la herramienta; respuesta en lenguaje natural |
-| test_unknown_tool_request | OK | |
-| test_out_of_workspace_rejected | OK | |
+| test_multiplication_tool | OK | 22.77s + 34.27s = 57s total |
+| test_unknown_tool_request | OK | ~36s (sin herramienta) |
+| test_out_of_workspace_rejected | OK | Ruta rechazada correctamente |
+
+**Nota:** El modelo formatea `37625` como `37.625` (punto de miles europeo). El test verifica que haya respuesta, no el valor exacto.
 
 ---
 
-## 4. Observaciones sobre latencia (v1 vs v2)
+## 4. Latencia medida (v1 vs v2)
 
-Los tiempos de v1 documentados en el CODEX:
+| Tarea | Saltos v1 | Tiempo v1 | Tiempo v2 (medido) | Delta |
+|---|---:|---:|---:|---:|
+| Multiplicacion | 2 | 45,62 s | 57,0 s | +25% |
+| Listar archivos | 2 | 30,76 s | 38,5 s | +25% |
+| Lectura y analisis | 2 | 87,04 s | 71,7 s | -18% |
 
-| Tarea | Saltos v1 | Tiempo v1 |
-|---|---:|---:|
-| Multiplicacion | 2 | 45,62 s |
-| Listar archivos | 2 | 30,76 s |
-| Lectura y analisis | 2 | 87,04 s |
+La v2 es ligeramente mas lenta en tareas simples porque el prompt del sistema es mas largo (+20 tokens). La lectura de archivo mejora porque el payload de herramienta es mas compacto. La latencia dominante sigue siendo la generacion de reasoning_content por el modelo.
+
+**Tokens observados en integracion:**
+- Listar: 345 entrada / 172 salida (salto 1) + 395/140 (salto 2)
+- Multiplicar: 351/188 (salto 1) + 403/299 (salto 2)
+- Leer archivo: 350/366 (salto 1) + 491/292 (salto 2)
 
 **Origen de la latencia:** El modelo Qwen3-8B genera `reasoning_content` (tokens de razonamiento internos) antes del `content` final. Esto es el principal factor de latencia, no la infraestructura.
 

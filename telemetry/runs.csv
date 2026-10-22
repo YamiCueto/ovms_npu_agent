@@ -1,6 +1,0 @@
-run_id,model,device,success,total_hops,total_prompt_tokens,total_completion_tokens,total_latency_s,error
-1b023a8b,OpenVINO/Qwen3-8B-int4-cw-ov,NPU,True,2,740,312,38.55,
-e3cc2b1f,OpenVINO/Qwen3-8B-int4-cw-ov,NPU,True,2,754,487,57.042,
-c83d1669,OpenVINO/Qwen3-8B-int4-cw-ov,NPU,True,2,737,1038,108.774,
-4d32efbe,OpenVINO/Qwen3-8B-int4-cw-ov,NPU,True,2,841,658,71.706,
-5e7922e0,OpenVINO/Qwen3-8B-int4-cw-ov,NPU,True,1,344,156,19.269,

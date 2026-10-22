@@ -139,7 +139,11 @@ def main() -> None:
                 continue
 
             try:
-                history, answer = orchestrator.run_turn(history, user_text)
+                new_history, answer = orchestrator.run_turn(history, user_text)
+                if orchestrator.last_trace.success:
+                    history = new_history
+                else:
+                    print(f"Ejecucion fallida: {orchestrator.last_trace.error}. Se conserva el historial anterior.")
                 print(f"\nAgente > {answer}\n")
             except (RuntimeError, KeyError, IndexError, ValueError) as exc:
                 print(f"Error: {exc}")

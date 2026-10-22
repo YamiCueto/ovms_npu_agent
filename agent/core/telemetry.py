@@ -2,7 +2,8 @@ import csv
 import json
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
+import statistics
 from pathlib import Path
 
 from .config import TELEMETRY_DIR
@@ -13,11 +14,12 @@ class HopTrace:
     hop: int
     tool_name: str | None
     tool_result_preview: str | None
-    prompt_tokens: int
-    completion_tokens: int
+    prompt_tokens: int | None
+    completion_tokens: int | None
     inference_latency_s: float
     tool_latency_s: float
     finish_reason: str | None
+    tools: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -35,10 +37,20 @@ class RunTrace:
     error: str = ""
 
     def total_prompt_tokens(self) -> int:
-        return sum(h.prompt_tokens for h in self.hops)
+        return sum(h.prompt_tokens for h in self.hops) if all(h.prompt_tokens is not None for h in self.hops) else None
 
     def total_completion_tokens(self) -> int:
-        return sum(h.completion_tokens for h in self.hops)
+        return sum(h.completion_tokens for h in self.hops) if all(h.completion_tokens is not None for h in self.hops) else None
+
+    def to_dict(self) -> dict:
+        data = asdict(self)
+        inference = sum(h.inference_latency_s for h in self.hops)
+        tokens = self.total_completion_tokens()
+        data.update(total_hops=len(self.hops), total_prompt_tokens=self.total_prompt_tokens(),
+                    total_completion_tokens=tokens, inference_latency_s=inference,
+                    tool_latency_s=sum(h.tool_latency_s for h in self.hops),
+                    tokens_per_second=tokens / inference if tokens is not None and inference > 0 else None)
+        return data
 
 
 _CSV_FIELDS = [
@@ -71,7 +83,7 @@ class Telemetry:
             "error": trace.error,
         }
         with open(self._jsonl_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            f.write(json.dumps(trace.to_dict(), ensure_ascii=False) + "\n")
 
         with open(self._csv_path, "a", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=_CSV_FIELDS)
@@ -91,8 +103,8 @@ class Telemetry:
         successes = sum(1 for r in records if r.get("success"))
         latencies = [r.get("total_latency_s", 0) for r in records]
         avg_lat = sum(latencies) / count
-        median_lat = sorted(latencies)[count // 2]
-        total_tokens = sum(r.get("total_completion_tokens", 0) for r in records)
+        median_lat = statistics.median(latencies)
+        total_tokens = sum(r.get("total_completion_tokens") or 0 for r in records)
         return (
             f"Ejecuciones: {count} | Exitosas: {successes} | "
             f"Latencia media: {avg_lat:.2f}s | Mediana: {median_lat:.2f}s | "

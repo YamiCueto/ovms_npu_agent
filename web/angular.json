@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "projects": {
+    "lab": {
+      "projectType": "application",
+      "root": "",
+      "sourceRoot": "src",
+      "architect": {
+        "build": {
+          "builder": "@angular/build:application",
+          "options": {
+            "browser": "src/main.ts",
+            "tsConfig": "tsconfig.json",
+            "index": "src/index.html",
+            "styles": [
+              "src/styles.css"
+            ],
+            "outputPath": "dist/lab"
+          }
+        },
+        "serve": {
+          "builder": "@angular/build:dev-server",
+          "options": {
+            "buildTarget": "lab:build"
+          }
+        }
+      }
+    }
+  },
+  "cli": {
+    "analytics": "be8a7924-9c68-48f1-8dab-4dd87e7a20a5"
+  }
+}

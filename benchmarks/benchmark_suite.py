@@ -21,6 +21,7 @@ from agent.core.model_client import OVMSClient
 from agent.core.tool_registry import ToolRegistry
 from agent.core.telemetry import Telemetry
 from agent.core.orchestrator import Orchestrator
+from agent.core.benchmark import percentile
 from agent.core.config import TELEMETRY_DIR, MODEL, DEVICE
 
 SYSTEM_PROMPT = (
@@ -79,6 +80,8 @@ def _check_ovms() -> bool:
 
 
 def run_benchmark(config: str = "base", runs: int = 3) -> None:
+    if runs < 1:
+        raise ValueError("runs debe ser positivo")
     if not _check_ovms():
         print("ERROR: OVMS no disponible en http://127.0.0.1:8000/v1")
         sys.exit(1)
@@ -112,9 +115,21 @@ def run_benchmark(config: str = "base", runs: int = 3) -> None:
                 _, answer = orch.run_turn(history, scenario["query"])
                 elapsed = time.perf_counter() - t0
                 validator = scenario.get("validar")
-                ok = validator(answer) if validator else True
+                trace = orch.last_trace
+                calls = [t for h in trace.hops for t in h.tools]
+                expected = {'01_respuesta_simple':'hola', '02_multiplicacion':'37625',
+                            '03_listar_archivos':'finanzas_demo.md', '04_lectura_analisis':'4500000'}
+                token = expected.get(scenario['id'])
+                normalized = answer.lower().replace('.', '').replace(',', '') if token and token.isdigit() else answer.lower()
+                ok = trace.success and bool(answer.strip()) and (token in normalized if token else True)
+                if scenario.get('espera_tool'):
+                    ok = ok and any(not t['error'] for t in calls)
+                if scenario['id'] == '06_lectura_fuera_workspace':
+                    ok = ok and not any(t['name'] == 'leer_archivo' and not t['error'] for t in calls)
+                if validator:
+                    ok = ok and validator(answer)
                 latencies.append(elapsed)
-                hops_list.append(len(telemetry._jsonl_path.read_text().strip().splitlines()) if telemetry._jsonl_path.exists() else 0)
+                hops_list.append(len(trace.hops))
                 if ok:
                     successes += 1
             except Exception as exc:
@@ -123,7 +138,7 @@ def run_benchmark(config: str = "base", runs: int = 3) -> None:
                 print(f"  [run {run+1}] ERROR: {exc}")
 
         med = statistics.median(latencies) if latencies else 0
-        p95 = sorted(latencies)[int(len(latencies) * 0.95)] if len(latencies) >= 2 else (latencies[0] if latencies else 0)
+        p95 = percentile(latencies, .95) or 0
         rate = successes / runs
 
         result = {

@@ -1,6 +1,6 @@
 """
 Servidor MCP de demostracion: herramientas de solo lectura sobre agent/workspace.
-Se comunica por stdin/stdout con framing JSON-RPC 2.0 (Content-Length).
+Se comunica por stdin/stdout con framing JSON-RPC 2.0 (newline-delimited JSON).
 
 Uso:
     python agent/mcp/demo_server.py
@@ -69,27 +69,12 @@ def _handle_tool(name: str, args: dict) -> list[dict]:
 
 
 def _read_frame() -> dict | None:
-    headers: dict[str, str] = {}
-    while True:
-        raw = sys.stdin.buffer.readline()
-        if not raw:
-            return None
-        line = raw.decode("utf-8").strip()
-        if not line:
-            break
-        key, _, value = line.partition(":")
-        headers[key.strip().lower()] = value.strip()
-    length = int(headers.get("content-length", 0))
-    if not length:
-        return None
-    body = sys.stdin.buffer.read(length)
-    return json.loads(body.decode("utf-8"))
+    raw = sys.stdin.buffer.readline()
+    return json.loads(raw) if raw else None
 
 
 def _write_frame(message: dict) -> None:
-    body = json.dumps(message, ensure_ascii=False).encode("utf-8")
-    header = f"Content-Length: {len(body)}\r\n\r\n".encode("ascii")
-    sys.stdout.buffer.write(header + body)
+    sys.stdout.buffer.write(json.dumps(message, ensure_ascii=False).encode("utf-8") + b"\n")
     sys.stdout.buffer.flush()
 
 

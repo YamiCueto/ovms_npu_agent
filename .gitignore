@@ -6,3 +6,10 @@ telemetry/
 *.csv
 *.jsonl
 .env
+node_modules/
+.npm-cache/
+.angular/
+web/dist/
+web/test-results/
+web/playwright-report/
+.test-telemetry/

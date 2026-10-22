@@ -1,10 +1,13 @@
 import json
 import time
+from dataclasses import asdict
+from collections.abc import Callable
 
-from .config import MAX_HOPS, DEVICE, InferenceMode
+from .config import MAX_HOPS, MAX_TOOL_CALLS_PER_RUN, DEVICE, InferenceMode
 from .model_client import OVMSClient
 from .tool_registry import ToolRegistry
 from .telemetry import Telemetry, RunTrace, HopTrace
+from .execution_lock import model_lock
 
 NO_THINK_PREFIX = "/no_think\n"
 
@@ -40,104 +43,97 @@ class Orchestrator:
         self.telemetry = telemetry
         self.mode = mode
 
-    def run_turn(self, history: list[dict], user_text: str) -> tuple[list[dict], str]:
-        effective_text = _apply_mode(user_text, self.mode)
-        messages = history + [{"role": "user", "content": effective_text}]
-        run_started = time.perf_counter()
-        trace = RunTrace(
-            model=self.client.model,
-            device=DEVICE,
-            mode=self.mode.value,
-            user_query=user_text[:200],
-        )
+    def run_turn(self, history: list[dict], user_text: str, on_event: Callable | None = None,
+                 run_id: str | None = None) -> tuple[list[dict], str]:
+        acquired = False
+        try:
+            with model_lock(self.client):
+                acquired = True
+                return self._run_turn(history, user_text, on_event, run_id)
+        except Exception as exc:
+            if not acquired:
+                trace = RunTrace(model=self.client.model, device=DEVICE, mode=self.mode.value,
+                                 user_query=user_text[:200], error=str(exc))
+                if run_id:
+                    trace.run_id = run_id
+                self.last_trace = trace
+                self.telemetry.record(trace)
+                if on_event:
+                    on_event({'type':'run_started', 'run_id':trace.run_id, 'elapsed_s':0, 'mode':self.mode.value})
+                    on_event({'type':'run_failed', 'run_id':trace.run_id, 'elapsed_s':0, 'trace':trace.to_dict()})
+            raise
 
+    def _run_turn(self, history, user_text, on_event=None, run_id=None):
+        messages = history + [{"role": "user", "content": _apply_mode(user_text, self.mode)}]
+        started = time.perf_counter()
+        trace = RunTrace(model=self.client.model, device=DEVICE, mode=self.mode.value, user_query=user_text[:200])
+        if run_id:
+            trace.run_id = run_id
+        self.last_trace = trace
+        def emit(kind, **data):
+            if on_event:
+                on_event({"type": kind, "run_id": trace.run_id, "elapsed_s": time.perf_counter() - started, **data})
+        def finish(answer, error=""):
+            trace.final_answer, trace.error, trace.success = answer, error, not bool(error)
+            trace.total_latency_s = time.perf_counter() - started
+            self.telemetry.record(trace)
+            emit("run_failed" if error else "run_completed", trace=trace.to_dict())
+            return messages, answer
+        emit("run_started", mode=self.mode.value, query=user_text)
+        tool_count = 0
         try:
             for hop in range(1, MAX_HOPS + 1):
-                inference_start = time.perf_counter()
-                result = self.client.chat(messages, tools=self.registry.schemas())
-                inference_latency = time.perf_counter() - inference_start
-
+                emit("hop_started", hop=hop)
+                t0 = time.perf_counter()
+                try:
+                    result = self.client.chat(messages, tools=self.registry.schemas())
+                except Exception as exc:
+                    ht = HopTrace(hop, None, None, None, None, time.perf_counter() - t0, 0.0, None)
+                    trace.hops.append(ht)
+                    emit('hop_completed', **asdict(ht), error=str(exc))
+                    raise
+                latency = time.perf_counter() - t0
                 choice = result["choices"][0]
-                message = choice["message"]
-                usage = result.get("usage", {})
-                finish_reason = choice.get("finish_reason")
-                prompt_tokens = usage.get("prompt_tokens", 0)
-                completion_tokens = usage.get("completion_tokens", 0)
-
-                print(
-                    f"[salto {hop}] {inference_latency:.2f}s | "
-                    f"tokens: {prompt_tokens} entrada / {completion_tokens} salida | "
-                    f"fin: {finish_reason} | modo: {self.mode.value}"
-                )
-
+                message, usage = choice["message"], result.get("usage") or {}
+                reason = choice.get("finish_reason")
+                ht = HopTrace(hop, None, None, usage.get("prompt_tokens"), usage.get("completion_tokens"), latency, 0.0, reason)
+                trace.hops.append(ht)
                 calls = message.get("tool_calls") or []
-                assistant_msg: dict = {"role": "assistant", "content": message.get("content") or ""}
+                emit("hop_completed", **asdict(ht), tool_calls=calls)
+                # A truncated tool call must never execute. Preserve the prior valid history.
+                if reason == "length":
+                    return finish(message.get("content") or "", "length: respuesta truncada por limite de tokens")
+                assistant = {"role": "assistant", "content": message.get("content") or ""}
                 if calls:
-                    assistant_msg["tool_calls"] = calls
-                messages.append(assistant_msg)
-
-                tool_latency = 0.0
-                tool_name_used: str | None = None
-                tool_result_preview: str | None = None
-
+                    assistant["tool_calls"] = calls
+                messages.append(assistant)
                 if not calls:
-                    answer = message.get("content") or ""
-                    if not answer.strip():
-                        print("[aviso] Respuesta vacia; el modelo pudo consumir los tokens en razonamiento.")
-
-                    trace.hops.append(HopTrace(
-                        hop=hop,
-                        tool_name=None,
-                        tool_result_preview=None,
-                        prompt_tokens=prompt_tokens,
-                        completion_tokens=completion_tokens,
-                        inference_latency_s=round(inference_latency, 3),
-                        tool_latency_s=0.0,
-                        finish_reason=finish_reason,
-                    ))
-                    trace.final_answer = answer
-                    trace.success = True
-                    trace.total_latency_s = time.perf_counter() - run_started
-                    self.telemetry.record(trace)
-                    return messages, answer
-
+                    answer = assistant["content"]
+                    return finish(answer, "empty_response" if not answer.strip() else "")
+                ids = [c.get("id") for c in calls]
+                if any(not i for i in ids) or len(set(ids)) != len(ids):
+                    raise ValueError("tool_call_id ausente o duplicado")
                 for call in calls:
                     function = call.get("function") or {}
-                    name = function.get("name", "")
-                    tool_name_used = name
-                    print(f"  herramienta solicitada: {name}")
-                    tool_start = time.perf_counter()
-                    output = self.registry.execute(name, function.get("arguments", "{}"))
-                    tool_latency = time.perf_counter() - tool_start
-                    tool_result_preview = json.dumps(output, ensure_ascii=False)[:300]
-                    print(f"  resultado: {tool_result_preview} ({tool_latency:.3f}s)")
-                    messages.append({
-                        "role": "tool",
-                        "tool_call_id": call["id"],
-                        "content": json.dumps(output, ensure_ascii=False),
-                    })
-
-                trace.hops.append(HopTrace(
-                    hop=hop,
-                    tool_name=tool_name_used,
-                    tool_result_preview=tool_result_preview,
-                    prompt_tokens=prompt_tokens,
-                    completion_tokens=completion_tokens,
-                    inference_latency_s=round(inference_latency, 3),
-                    tool_latency_s=round(tool_latency, 3),
-                    finish_reason=finish_reason,
-                ))
-
-            final = "Limite de saltos alcanzado; ejecucion detenida."
-            trace.final_answer = final
-            trace.success = False
-            trace.error = "max_hops"
-            trace.total_latency_s = time.perf_counter() - run_started
-            self.telemetry.record(trace)
-            return messages, final
-
+                    name, args = function.get("name", ""), function.get("arguments", "{}")
+                    tool_count += 1
+                    emit("tool_started", hop=hop, tool_call_id=call["id"], name=name, arguments=args)
+                    t0 = time.perf_counter()
+                    try:
+                        output = self.registry.execute(name, args) if tool_count <= MAX_TOOL_CALLS_PER_RUN else {"error": "max_tool_calls"}
+                    except Exception as exc:
+                        output = {"error": str(exc)}
+                    duration = time.perf_counter() - t0
+                    tool = {"tool_call_id": call["id"], "name": name, "arguments": args, "result": output,
+                            "latency_s": duration, "error": output.get("error") if isinstance(output, dict) else None}
+                    ht.tools.append(tool)
+                    ht.tool_latency_s += duration
+                    ht.tool_name, ht.tool_result_preview = name, json.dumps(output, ensure_ascii=False)[:300]
+                    messages.append({"role": "tool", "tool_call_id": call["id"], "content": json.dumps(output, ensure_ascii=False)})
+                    emit("tool_completed", hop=hop, **tool)
+                if tool_count > MAX_TOOL_CALLS_PER_RUN:
+                    return finish("Limite de herramientas alcanzado.", "max_tool_calls")
+            return finish("Limite de saltos alcanzado; ejecucion detenida.", "max_hops")
         except Exception as exc:
-            trace.error = str(exc)[:500]
-            trace.total_latency_s = time.perf_counter() - run_started
-            self.telemetry.record(trace)
+            finish("", str(exc)[:500])
             raise

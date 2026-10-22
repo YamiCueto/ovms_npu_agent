@@ -1,4 +1,97 @@
-# NPU Agent Lab v2.1
+# NPU Agent Lab v3.0
+
+Interfaz Angular 22 local con Dashboard, Chat, Inspector SSE, MCP y Benchmark.
+Reutiliza el agente v2.1 y mantiene la CLI. No cambia la configuración de OVMS.
+
+## Inicio rápido de la web
+
+Desde la raíz del repositorio, con Python 3.10+ y Node compatible con Angular 22
+(validado con Python 3.14.6 y Node 24.19.0):
+
+```powershell
+# Ajusta esta ruta si clonaste el repositorio en otra carpeta.
+cd C:\Users\YAMI\Downloads\ovms_npu_agent
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-web.txt
+npm.cmd ci --prefix web
+npm.cmd run build --prefix web
+.\.venv\Scripts\python.exe -m agent.api
+```
+
+Abre **http://127.0.0.1:8080**. OVMS debe estar iniciado con su despliegue habitual.
+La API consulta su disponibilidad real; una desconexión no se simula como éxito.
+El bundle se sirve desde FastAPI, sin servidor Node en producción ni recursos remotos.
+Para desarrollo: API en 8080 y `npm.cmd start --prefix web` en 4200, con proxy REST/SSE.
+Usa un solo worker de API. Detén con Ctrl+C; espera las ejecuciones activas.
+
+### Iniciar la aplicación después de instalarla
+
+No necesitas reinstalar dependencias ni recompilar en cada arranque. Abre una terminal
+PowerShell y ejecuta desde la **raíz del repositorio**, donde están las carpetas `agent`,
+`web` y `.venv`:
+
+```powershell
+cd C:\Users\YAMI\Downloads\ovms_npu_agent
+.\.venv\Scripts\python.exe -m agent.api
+```
+
+Si tu terminal está en `ovms_npu_agent\web`, ejecuta primero `cd ..`.
+No es necesario activar el entorno virtual: el comando utiliza directamente su Python.
+Espera el mensaje `Uvicorn running on http://127.0.0.1:8080` y después abre o recarga
+**http://127.0.0.1:8080/** en el navegador.
+
+**Mantén esa terminal abierta y el proceso en ejecución mientras uses la aplicación.**
+Abrir la URL no inicia el servidor. Para detenerlo, pulsa Ctrl+C en esa terminal.
+Después de modificar el frontend, vuelve a ejecutar `npm.cmd run build --prefix web`.
+
+### Si aparece ERR_CONNECTION_REFUSED
+
+Este error indica que el navegador no logra conectarse a la API local en el puerto 8080.
+
+1. Inicia la API con los comandos anteriores desde la raíz del repositorio.
+2. Si el proceso termina con un error, revisa la salida de la terminal antes de recargar.
+3. Cuando aparezca el mensaje de Uvicorn, recarga la página.
+
+Puedes comprobar la conexión desde **otra terminal**:
+
+```powershell
+(Invoke-WebRequest http://127.0.0.1:8080/ -UseBasicParsing).StatusCode
+Invoke-RestMethod http://127.0.0.1:8080/api/status
+```
+
+La primera consulta debe devolver `200`. La segunda informa si OVMS está conectado
+y si el modelo está disponible. Si la web abre pero muestra «OVMS sin conexión»,
+comprueba el proceso OVMS existente; es un estado distinto de una API web detenida.
+
+### CLI, benchmark y pruebas
+
+```powershell
+# CLI existente (sin dependencias web)
+python -m agent.main
+# Benchmark v3: mismos casos y validadores que la web
+python -m benchmarks.lab_benchmark --runs 3
+# Pruebas unitarias y API, sin inferencia real
+.\.venv\Scripts\python.exe -m unittest tests.test_v3 tests.test_orchestrator tests.test_inference_modes tests.test_mcp tests.test_security tests.test_tools tests.test_model_client -v
+# E2E Chrome: requiere build previo y puerto 8080 libre
+npm.cmd run e2e --prefix web
+# Smoke navegador + OVMS real (opcional, consume inferencia local)
+cd web
+npx.cmd playwright test --config playwright.real.config.ts
+```
+
+Los E2E predeterminados arrancan un cliente de prueba claramente identificado; no miden la NPU.
+Requieren Google Chrome instalado. Sesiones y gráfica viven en memoria del servidor;
+las trazas completas se conservan en JSONL. La UI se recupera al recargar la pestaña.
+
+MCP incluye un servidor demo de solo lectura. Para autorizar otros servidores, configura
+`AGENT_MCP_CONFIG` con la ruta a un JSON local de comandos; nunca se reciben comandos
+desde HTTP. Solo autoriza servidores confiables que respeten la política de solo lectura.
+
+- [Arquitectura, eventos, métricas y límites v3](docs/V3_ARCHITECTURE.md)
+- [Reporte de implementación y validación v3](docs/V3_IMPLEMENTATION_REPORT.md)
+
+Las secciones siguientes conservan la guía de la CLI y el contexto de v2.1.
+Los resultados históricos de rendimiento no sustituyen las mediciones de tu sesión actual.
 
 Agente local de razonamiento + herramientas que corre íntegramente en hardware Intel NPU mediante **OpenVINO Model Server (OVMS)**. Diseñado para Windows 11 con Intel Core Ultra, sin dependencias de nube ni de frameworks LLM externos.
 
@@ -6,20 +99,39 @@ Agente local de razonamiento + herramientas que corre íntegramente en hardware 
 
 ## Índice
 
-1. [Arquitectura general](#arquitectura-general)
-2. [Diagrama de componentes](#diagrama-de-componentes)
-3. [Flujo de actividad](#flujo-de-actividad)
-4. [Diagrama de estado del agente](#diagrama-de-estado-del-agente)
-5. [Modos de inferencia](#modos-de-inferencia)
-6. [Ciclo MCP](#ciclo-mcp)
-7. [Requisitos](#requisitos)
-8. [Instalación](#instalación)
-9. [Uso](#uso)
-10. [Herramientas disponibles](#herramientas-disponibles)
-11. [Telemetría](#telemetría)
-12. [Pruebas](#pruebas)
-13. [Seguridad](#seguridad)
-14. [Rendimiento](#rendimiento)
+- [NPU Agent Lab v3.0](#npu-agent-lab-v30)
+  - [Inicio rápido de la web](#inicio-rápido-de-la-web)
+    - [Iniciar la aplicación después de instalarla](#iniciar-la-aplicación-después-de-instalarla)
+    - [Si aparece ERR_CONNECTION_REFUSED](#si-aparece-err_connection_refused)
+    - [CLI, benchmark y pruebas](#cli-benchmark-y-pruebas)
+  - [Índice](#índice)
+  - [Arquitectura general](#arquitectura-general)
+  - [Diagrama de componentes](#diagrama-de-componentes)
+  - [Flujo de actividad](#flujo-de-actividad)
+  - [Diagrama de estado del agente](#diagrama-de-estado-del-agente)
+  - [Modos de inferencia](#modos-de-inferencia)
+  - [Ciclo MCP](#ciclo-mcp)
+  - [Requisitos](#requisitos)
+  - [Instalación](#instalación)
+  - [Uso](#uso)
+    - [Comandos de la CLI](#comandos-de-la-cli)
+    - [Ejemplos de consulta](#ejemplos-de-consulta)
+    - [Conectar el servidor MCP de demostración](#conectar-el-servidor-mcp-de-demostración)
+  - [Herramientas disponibles](#herramientas-disponibles)
+    - [Herramientas nativas](#herramientas-nativas)
+    - [Herramientas MCP (demo server)](#herramientas-mcp-demo-server)
+  - [Telemetría](#telemetría)
+  - [Pruebas](#pruebas)
+    - [Suite unitaria (no requiere OVMS)](#suite-unitaria-no-requiere-ovms)
+    - [Suite de integración (requiere OVMS activo)](#suite-de-integración-requiere-ovms-activo)
+    - [Benchmarks](#benchmarks)
+  - [Seguridad](#seguridad)
+    - [Modelo de permisos](#modelo-de-permisos)
+    - [Garantías](#garantías)
+    - [OVMS sin autenticación](#ovms-sin-autenticación)
+  - [Rendimiento](#rendimiento)
+    - [Variables de entorno configurables](#variables-de-entorno-configurables)
+  - [Estructura del proyecto](#estructura-del-proyecto)
 
 ---
 

@@ -55,8 +55,16 @@ class ToolRegistry:
 
     def register(self, schema: dict, handler: Callable) -> None:
         name = schema["function"]["name"]
+        if name in self._handlers:
+            raise ValueError(f"Herramienta duplicada: {name}")
         self._schemas.append(schema)
         self._handlers[name] = handler
+
+    def unregister(self, name: str) -> None:
+        if name in _BASE_HANDLERS:
+            raise ValueError("No se puede eliminar una herramienta base")
+        self._handlers.pop(name, None)
+        self._schemas = [s for s in self._schemas if s['function']['name'] != name]
 
     def schemas(self) -> list[dict]:
         return list(self._schemas)

@@ -1,0 +1,171 @@
+{
+  "status": {
+    "connected": true,
+    "model_available": true,
+    "model": "OpenVINO/Qwen3-8B-int4-cw-ov",
+    "configured_device": "NPU",
+    "busy": false,
+    "error": null
+  },
+  "traces": [
+    {
+      "run_id": "737cf9e8-91ac-45bd-add8-98fc4deba314",
+      "model": "OpenVINO/Qwen3-8B-int4-cw-ov",
+      "device": "NPU",
+      "mode": "normal",
+      "user_query": "Multiplica 875 por 43 usando multiplicar.",
+      "started_at": 1792690825.0768294,
+      "hops": [
+        {
+          "hop": 1,
+          "tool_name": "multiplicar",
+          "tool_result_preview": "{\"resultado\": 37625}",
+          "prompt_tokens": 388,
+          "completion_tokens": 168,
+          "inference_latency_s": 20.916148299998895,
+          "tool_latency_s": 0.00000940000063565094,
+          "finish_reason": "tool_calls",
+          "tools": [
+            {
+              "tool_call_id": "JHIbPyoC8",
+              "name": "multiplicar",
+              "arguments": "{\"a\": 875, \"b\": 43}",
+              "result": {
+                "resultado": 37625
+              },
+              "latency_s": 0.00000940000063565094,
+              "error": null
+            }
+          ]
+        },
+        {
+          "hop": 2,
+          "tool_name": null,
+          "tool_result_preview": null,
+          "prompt_tokens": 440,
+          "completion_tokens": 335,
+          "inference_latency_s": 37.84256210000058,
+          "tool_latency_s": 0,
+          "finish_reason": "stop",
+          "tools": []
+        }
+      ],
+      "final_answer": "\n\nLa multiplicación de 875 por 43 es igual a 37625. ¿Hay algo más que necesites?",
+      "total_latency_s": 58.75886069999979,
+      "success": true,
+      "error": "",
+      "total_hops": 2,
+      "total_prompt_tokens": 828,
+      "total_completion_tokens": 503,
+      "inference_latency_s": 58.75871039999947,
+      "tool_latency_s": 0.00000940000063565094,
+      "tokens_per_second": 8.56043293965833
+    },
+    {
+      "run_id": "5c3fb187-17ba-4ea8-8630-f5498aae144d",
+      "model": "OpenVINO/Qwen3-8B-int4-cw-ov",
+      "device": "NPU",
+      "mode": "rapido",
+      "user_query": "Multiplica 875 por 43 usando multiplicar.",
+      "started_at": 1792690884.4337897,
+      "hops": [
+        {
+          "hop": 1,
+          "tool_name": "multiplicar",
+          "tool_result_preview": "{\"resultado\": 37625}",
+          "prompt_tokens": 392,
+          "completion_tokens": 34,
+          "inference_latency_s": 7.773277000000235,
+          "tool_latency_s": 0.000010099998689838685,
+          "finish_reason": "tool_calls",
+          "tools": [
+            {
+              "tool_call_id": "lpICOIddH",
+              "name": "multiplicar",
+              "arguments": "{\"a\": 875, \"b\": 43}",
+              "result": {
+                "resultado": 37625
+              },
+              "latency_s": 0.000010099998689838685,
+              "error": null
+            }
+          ]
+        },
+        {
+          "hop": 2,
+          "tool_name": null,
+          "tool_result_preview": null,
+          "prompt_tokens": 444,
+          "completion_tokens": 26,
+          "inference_latency_s": 6.806474699998944,
+          "tool_latency_s": 0,
+          "finish_reason": "stop",
+          "tools": []
+        }
+      ],
+      "final_answer": "\n\nEl resultado de multiplicar 875 por 43 es 37625.",
+      "total_latency_s": 14.579893399999492,
+      "success": true,
+      "error": "",
+      "total_hops": 2,
+      "total_prompt_tokens": 836,
+      "total_completion_tokens": 60,
+      "inference_latency_s": 14.579751699999179,
+      "tool_latency_s": 0.000010099998689838685,
+      "tokens_per_second": 4.115296421680719
+    },
+    {
+      "run_id": "7d23b90b-f334-4228-9567-e39360eb858e",
+      "model": "OpenVINO/Qwen3-8B-int4-cw-ov",
+      "device": "NPU",
+      "mode": "automatico",
+      "user_query": "Multiplica 875 por 43 usando multiplicar.",
+      "started_at": 1792690899.167185,
+      "hops": [
+        {
+          "hop": 1,
+          "tool_name": "multiplicar",
+          "tool_result_preview": "{\"resultado\": 37625}",
+          "prompt_tokens": 392,
+          "completion_tokens": 34,
+          "inference_latency_s": 7.881912699998793,
+          "tool_latency_s": 0.000006300000677583739,
+          "finish_reason": "tool_calls",
+          "tools": [
+            {
+              "tool_call_id": "Is93yl5uK",
+              "name": "multiplicar",
+              "arguments": "{\"a\": 875, \"b\": 43}",
+              "result": {
+                "resultado": 37625
+              },
+              "latency_s": 0.000006300000677583739,
+              "error": null
+            }
+          ]
+        },
+        {
+          "hop": 2,
+          "tool_name": null,
+          "tool_result_preview": null,
+          "prompt_tokens": 444,
+          "completion_tokens": 26,
+          "inference_latency_s": 6.959937800000262,
+          "tool_latency_s": 0,
+          "finish_reason": "stop",
+          "tools": []
+        }
+      ],
+      "final_answer": "\n\nEl resultado de multiplicar 875 por 43 es 37625.",
+      "total_latency_s": 14.841956399999617,
+      "success": true,
+      "error": "",
+      "total_hops": 2,
+      "total_prompt_tokens": 836,
+      "total_completion_tokens": 60,
+      "inference_latency_s": 14.841850499999055,
+      "tool_latency_s": 0.000006300000677583739,
+      "tokens_per_second": 4.042622582676184
+    }
+  ]
+}

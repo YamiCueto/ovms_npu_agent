@@ -23,6 +23,7 @@ from agent.core.model_client import OVMSClient
 from agent.core.tool_registry import ToolRegistry
 from agent.core.telemetry import Telemetry
 from agent.core.orchestrator import Orchestrator
+from agent.core.benchmark import percentile
 
 SYSTEM_PROMPT = (
     "Eres un agente de laboratorio. Responde en espanol de forma breve. "
@@ -91,9 +92,17 @@ def _run_scenario(orch: Orchestrator, query: str, runs: int) -> dict:
             last_trace = orch.telemetry._last_trace
             if last_trace is not None:
                 hops_list.append(len(last_trace.hops))
-                prompt_tokens_list.append(last_trace.total_prompt_tokens())
-                completion_tokens_list.append(last_trace.total_completion_tokens())
-            if answer.strip():
+                prompt_tokens_list.append(last_trace.total_prompt_tokens() or 0)
+                completion_tokens_list.append(last_trace.total_completion_tokens() or 0)
+            expected = {SCENARIOS[0]['query']: ('hola', None), SCENARIOS[1]['query']: ('37625', 'multiplicar'),
+                        SCENARIOS[2]['query']: ('finanzas_demo.md', 'listar_archivos'),
+                        SCENARIOS[3]['query']: ('4500000', 'leer_archivo'),
+                        MCP_SCENARIO['query']: ('finanzas_demo.md', 'mcp_ws_listar_archivos')}
+            token, tool = expected.get(query, ('', None))
+            calls = [t for h in last_trace.hops for t in h.tools] if last_trace else []
+            normalized = answer.lower().replace('.', '').replace(',', '') if token.isdigit() else answer.lower()
+            tool_ok = any(t['name'] == tool and not t['error'] for t in calls) if tool else not calls
+            if last_trace and last_trace.success and token and token in normalized and tool_ok:
                 successes += 1
         except Exception as exc:
             elapsed = time.perf_counter() - t0
@@ -103,7 +112,7 @@ def _run_scenario(orch: Orchestrator, query: str, runs: int) -> dict:
     n = len(latencies)
     sorted_lat = sorted(latencies)
     median = statistics.median(latencies) if latencies else 0
-    p95 = sorted_lat[max(0, int(n * 0.95) - 1)] if n >= 2 else (latencies[0] if latencies else 0)
+    p95 = percentile(latencies, .95) or 0
     avg_prompts = sum(prompt_tokens_list) / len(prompt_tokens_list) if prompt_tokens_list else 0
     avg_completions = sum(completion_tokens_list) / len(completion_tokens_list) if completion_tokens_list else 0
     avg_hops = sum(hops_list) / len(hops_list) if hops_list else 0
@@ -122,6 +131,8 @@ def _run_scenario(orch: Orchestrator, query: str, runs: int) -> dict:
 
 
 def run_ab(runs: int = 3, include_mcp: bool = False) -> None:
+    if runs < 1:
+        raise ValueError("runs debe ser positivo")
     if not _check_ovms():
         print("ERROR: OVMS no disponible en http://127.0.0.1:8000/v1")
         sys.exit(1)

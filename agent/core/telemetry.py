@@ -25,6 +25,7 @@ class RunTrace:
     run_id: str = field(default_factory=lambda: str(uuid.uuid4())[:8])
     model: str = ""
     device: str = ""
+    mode: str = "normal"
     user_query: str = ""
     started_at: float = field(default_factory=time.time)
     hops: list[HopTrace] = field(default_factory=list)
@@ -41,7 +42,7 @@ class RunTrace:
 
 
 _CSV_FIELDS = [
-    "run_id", "model", "device", "success", "total_hops",
+    "run_id", "model", "device", "mode", "success", "total_hops",
     "total_prompt_tokens", "total_completion_tokens", "total_latency_s", "error",
 ]
 
@@ -53,12 +54,15 @@ class Telemetry:
         self._jsonl_path = self.directory / "runs.jsonl"
         self._csv_path = self.directory / "runs.csv"
         self._csv_has_header = self._csv_path.exists()
+        self._last_trace: RunTrace | None = None
 
     def record(self, trace: RunTrace) -> None:
+        self._last_trace = trace
         row = {
             "run_id": trace.run_id,
             "model": trace.model,
             "device": trace.device,
+            "mode": trace.mode,
             "success": trace.success,
             "total_hops": len(trace.hops),
             "total_prompt_tokens": trace.total_prompt_tokens(),

@@ -1,5 +1,15 @@
 import os
+from enum import Enum
 from pathlib import Path
+
+
+class InferenceMode(str, Enum):
+    NORMAL = "normal"
+    RAPIDO = "rapido"
+    AUTOMATICO = "automatico"
+
+
+DEFAULT_MODE = InferenceMode(os.getenv("AGENT_MODE", InferenceMode.NORMAL.value))
 
 MODEL = os.getenv("OVMS_MODEL", "OpenVINO/Qwen3-8B-int4-cw-ov")
 BASE_URL = os.getenv("OVMS_BASE_URL", "http://127.0.0.1:8000/v1").rstrip("/")

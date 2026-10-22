@@ -2,7 +2,7 @@ import json
 import sys
 from pathlib import Path
 
-from .core.config import MODEL, BASE_URL, WORKSPACE, DEVICE
+from .core.config import MODEL, BASE_URL, WORKSPACE, DEVICE, InferenceMode, DEFAULT_MODE
 from .core.model_client import OVMSClient
 from .core.tool_registry import ToolRegistry
 from .core.telemetry import Telemetry
@@ -17,14 +17,24 @@ SYSTEM_PROMPT = (
 )
 
 AYUDA = """Comandos disponibles:
-  /ayuda         Muestra esta ayuda
-  /herramientas  Lista herramientas registradas
-  /modelos       Muestra modelo y endpoint activo
-  /metricas      Resumen de telemetria de la sesion
-  /mcp <cmd>     Conectar servidor MCP: /mcp conectar <id> <comando...>
-                                        /mcp desconectar <id>
-  /reiniciar     Borra el historial de conversacion
-  /salir         Cierra el agente"""
+  /ayuda              Muestra esta ayuda
+  /herramientas       Lista herramientas registradas
+  /modelos            Muestra modelo y endpoint activo
+  /metricas           Resumen de telemetria de la sesion
+  /modo               Muestra el modo de inferencia activo
+  /modo normal        Razonamiento completo (predeterminado)
+  /modo rapido        Antepone /no_think al mensaje del usuario
+  /modo automatico    Elige el modo segun la complejidad de la consulta
+  /mcp <cmd>          Conectar servidor MCP: /mcp conectar <id> <comando...>
+                                             /mcp desconectar <id>
+  /reiniciar          Borra el historial de conversacion
+  /salir              Cierra el agente"""
+
+_MODO_LABELS = {
+    InferenceMode.NORMAL: "normal    — razonamiento completo",
+    InferenceMode.RAPIDO: "rapido    — /no_think activado",
+    InferenceMode.AUTOMATICO: "automatico — /no_think en tareas simples",
+}
 
 
 def _make_initial_history() -> list[dict]:
@@ -60,14 +70,15 @@ def main() -> None:
     client = OVMSClient()
     registry = ToolRegistry()
     telemetry = Telemetry()
-    orchestrator = Orchestrator(client, registry, telemetry)
+    orchestrator = Orchestrator(client, registry, telemetry, mode=DEFAULT_MODE)
     mcp = MCPManager(registry)
 
-    print("Agente local OVMS + Intel NPU  [v2]")
-    print(f"Modelo : {MODEL}")
-    print(f"Servidor: {BASE_URL}")
+    print("Agente local OVMS + Intel NPU  [v2.1]")
+    print(f"Modelo    : {MODEL}")
+    print(f"Servidor  : {BASE_URL}")
     print(f"Dispositivo: {DEVICE}")
-    print(f"Workspace: {WORKSPACE}")
+    print(f"Workspace : {WORKSPACE}")
+    print(f"Modo      : {orchestrator.mode.value}")
     print("Escribe /ayuda para ver los comandos disponibles.\n")
 
     history = _make_initial_history()
@@ -107,6 +118,19 @@ def main() -> None:
 
             if lower == "/metricas":
                 print(telemetry.summary())
+                continue
+
+            if lower == "/modo":
+                print(f"Modo actual: {_MODO_LABELS[orchestrator.mode]}")
+                continue
+
+            if lower.startswith("/modo "):
+                nombre = lower.split(None, 1)[1].strip()
+                try:
+                    orchestrator.mode = InferenceMode(nombre)
+                    print(f"Modo cambiado a: {_MODO_LABELS[orchestrator.mode]}")
+                except ValueError:
+                    print(f"Modo desconocido '{nombre}'. Opciones: normal, rapido, automatico")
                 continue
 
             if lower.startswith("/mcp"):

@@ -1,10 +1,30 @@
 import json
 import time
 
-from .config import MAX_HOPS, DEVICE
+from .config import MAX_HOPS, DEVICE, InferenceMode
 from .model_client import OVMSClient
 from .tool_registry import ToolRegistry
 from .telemetry import Telemetry, RunTrace, HopTrace
+
+NO_THINK_PREFIX = "/no_think\n"
+
+_COMPLEX_KEYWORDS = frozenset([
+    "lee ", "leer ", "lee\n", "analiz", "resum", "explica", "describe",
+    "document", "compara", "detalla",
+])
+
+
+def _is_simple_query(text: str) -> bool:
+    lower = text.lower()
+    return not any(kw in lower for kw in _COMPLEX_KEYWORDS)
+
+
+def _apply_mode(text: str, mode: InferenceMode) -> str:
+    if mode == InferenceMode.RAPIDO:
+        return NO_THINK_PREFIX + text
+    if mode == InferenceMode.AUTOMATICO:
+        return (NO_THINK_PREFIX + text) if _is_simple_query(text) else text
+    return text
 
 
 class Orchestrator:
@@ -13,17 +33,21 @@ class Orchestrator:
         client: OVMSClient,
         registry: ToolRegistry,
         telemetry: Telemetry,
+        mode: InferenceMode = InferenceMode.NORMAL,
     ):
         self.client = client
         self.registry = registry
         self.telemetry = telemetry
+        self.mode = mode
 
     def run_turn(self, history: list[dict], user_text: str) -> tuple[list[dict], str]:
-        messages = history + [{"role": "user", "content": user_text}]
+        effective_text = _apply_mode(user_text, self.mode)
+        messages = history + [{"role": "user", "content": effective_text}]
         run_started = time.perf_counter()
         trace = RunTrace(
             model=self.client.model,
             device=DEVICE,
+            mode=self.mode.value,
             user_query=user_text[:200],
         )
 
@@ -43,7 +67,7 @@ class Orchestrator:
                 print(
                     f"[salto {hop}] {inference_latency:.2f}s | "
                     f"tokens: {prompt_tokens} entrada / {completion_tokens} salida | "
-                    f"fin: {finish_reason}"
+                    f"fin: {finish_reason} | modo: {self.mode.value}"
                 )
 
                 calls = message.get("tool_calls") or []

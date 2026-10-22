@@ -1,4 +1,4 @@
-# NPU Agent Lab v2
+# NPU Agent Lab v2.1
 
 Agente local de razonamiento + herramientas que corre íntegramente en hardware Intel NPU mediante **OpenVINO Model Server (OVMS)**. Diseñado para Windows 11 con Intel Core Ultra, sin dependencias de nube ni de frameworks LLM externos.
 
@@ -10,15 +10,16 @@ Agente local de razonamiento + herramientas que corre íntegramente en hardware 
 2. [Diagrama de componentes](#diagrama-de-componentes)
 3. [Flujo de actividad](#flujo-de-actividad)
 4. [Diagrama de estado del agente](#diagrama-de-estado-del-agente)
-5. [Ciclo MCP](#ciclo-mcp)
-6. [Requisitos](#requisitos)
-7. [Instalación](#instalación)
-8. [Uso](#uso)
-9. [Herramientas disponibles](#herramientas-disponibles)
-10. [Telemetría](#telemetría)
-11. [Pruebas](#pruebas)
-12. [Seguridad](#seguridad)
-13. [Rendimiento](#rendimiento)
+5. [Modos de inferencia](#modos-de-inferencia)
+6. [Ciclo MCP](#ciclo-mcp)
+7. [Requisitos](#requisitos)
+8. [Instalación](#instalación)
+9. [Uso](#uso)
+10. [Herramientas disponibles](#herramientas-disponibles)
+11. [Telemetría](#telemetría)
+12. [Pruebas](#pruebas)
+13. [Seguridad](#seguridad)
+14. [Rendimiento](#rendimiento)
 
 ---
 
@@ -172,6 +173,44 @@ stateDiagram-v2
 
 ---
 
+## Modos de inferencia
+
+Qwen3-8B genera `reasoning_content` (tokens de razonamiento internos) antes de cada respuesta. El token `/no_think` suprime ese razonamiento y reduce la latencia considerablemente en tareas simples.
+
+```mermaid
+flowchart LR
+    subgraph modos["Modos disponibles"]
+        N["normal\nRazonamiento completo\n(predeterminado)"]
+        R["rapido\n/no_think siempre activo\n~5s en tareas simples"]
+        A["automatico\n/no_think en tareas simples\nRazonamiento en tareas complejas"]
+    end
+
+    Q[Consulta del usuario] --> MODO{Modo activo}
+    MODO -->|normal| N
+    MODO -->|rapido| R
+    MODO -->|automatico| HEURISTICA
+
+    HEURISTICA{Heuristica:\ncontiene 'lee/leer/analiz\nresum/explica/document'?}
+    HEURISTICA -->|No → simple| R
+    HEURISTICA -->|Sí → compleja| N
+
+    N --> OVMS[OVMS → Qwen3-8B]
+    R --> OVMS
+    A --> OVMS
+```
+
+**Cambio de modo en tiempo real:**
+```
+/modo rapido
+/modo automatico
+/modo normal
+/modo              ← consultar modo activo
+```
+
+> El prefijo `/no_think` se aplica únicamente al primer mensaje del usuario en cada salto. Los mensajes de herramientas no se modifican.
+
+---
+
 ## Ciclo MCP
 
 ```mermaid
@@ -263,6 +302,10 @@ python -m agent.main
 | `/herramientas` | Lista las herramientas registradas |
 | `/modelos` | Modelo activo y endpoint |
 | `/metricas` | Resumen de telemetría de la sesión |
+| `/modo` | Muestra el modo de inferencia activo |
+| `/modo normal` | Razonamiento completo (predeterminado) |
+| `/modo rapido` | Antepone `/no_think` al mensaje — reduce latencia |
+| `/modo automatico` | Elige el modo según la complejidad de la consulta |
 | `/mcp conectar <id> <cmd...>` | Conecta un servidor MCP por stdio |
 | `/mcp desconectar <id>` | Desconecta un servidor MCP |
 | `/reiniciar` | Borra el historial de conversación |
@@ -337,7 +380,7 @@ Ver resumen en tiempo real con `/metricas` desde la CLI.
 python -m unittest tests.test_tools tests.test_security tests.test_orchestrator tests.test_mcp -v
 ```
 
-**Resultado:** 55 tests — OK (1 skip: symlinks sin privilegios de administrador)
+**Resultado:** 78 tests — OK (1 skip: symlinks sin privilegios de administrador)
 
 | Suite | Tests | Cubre |
 |---|---|---|
@@ -345,6 +388,7 @@ python -m unittest tests.test_tools tests.test_security tests.test_orchestrator 
 | `test_security` | 15 | Path traversal, extensiones, tamaño, allowlist |
 | `test_orchestrator` | 8 | Bucle agentico, límite de saltos, telemetría |
 | `test_mcp` | 9 | Conversión de esquemas, registro MCP, errores |
+| `test_inference_modes` | 23 | Modos normal/rapido/automatico, prefijo `/no_think`, compatibilidad tool calling |
 
 ### Suite de integración (requiere OVMS activo)
 
@@ -355,14 +399,18 @@ python -m unittest tests.integration.test_real_agent -v
 ### Benchmarks
 
 ```powershell
-# Configuración base
-python -m benchmarks.benchmark_suite --config base --runs 3
+# Benchmark A/B: normal vs. rapido (/no_think)
+python -m benchmarks.ab_benchmark --runs 3
 
-# Configuración optimizada (max_tokens reducido)
+# Con escenario MCP incluido
+python -m benchmarks.ab_benchmark --runs 3 --mcp
+
+# Benchmark general por configuracion
+python -m benchmarks.benchmark_suite --config base --runs 3
 python -m benchmarks.benchmark_suite --config optimized --runs 3
 ```
 
-Los resultados se guardan en `telemetry/benchmark_base.json` y `telemetry/benchmark_optimized.json`.
+Los resultados se guardan en `telemetry/ab/ab_results.json` e informe en `docs/NPU_AGENT_V21_BENCHMARK.md`.
 
 ---
 
@@ -423,7 +471,7 @@ Tiempos medidos con Qwen3-8B en NPU (Intel AI Boost):
 | Listar archivos | 2 | ~38 s |
 | Lectura y análisis de documento | 2 | ~72 s |
 
-La latencia dominante es la generación de `reasoning_content` interno del modelo. Para reducirla en tareas simples, se puede anteponer `/no_think` a la consulta del usuario (requiere verificación de compatibilidad con el parser `hermes3` de OVMS).
+La latencia dominante es la generación de `reasoning_content` interno del modelo. El modo `rapido` antepone `/no_think` al mensaje del usuario, lo cual redujo la latencia de ~5s a ~19s según el tipo de tarea en pruebas experimentales. Ver benchmark A/B en `docs/NPU_AGENT_V21_BENCHMARK.md`.
 
 ### Variables de entorno configurables
 
@@ -436,6 +484,7 @@ La latencia dominante es la generación de `reasoning_content` interno del model
 | `AGENT_TIMEOUT` | `180` | Timeout HTTP en segundos |
 | `AGENT_MAX_FILE_BYTES` | `8192` | Tamaño máximo de archivo a leer |
 | `AGENT_TELEMETRY_DIR` | `telemetry/` | Directorio de trazas |
+| `AGENT_MODE` | `normal` | Modo de inferencia inicial (`normal`, `rapido`, `automatico`) |
 
 ---
 
@@ -469,9 +518,11 @@ ovms_npu_agent/
 │   └── integration/
 │       └── test_real_agent.py
 ├── benchmarks/
-│   └── benchmark_suite.py
+│   ├── benchmark_suite.py
+│   └── ab_benchmark.py          # Benchmark A/B normal vs rapido
 ├── telemetry/                   # Generado en ejecución
 ├── docs/
-│   └── NPU_AGENT_V2_REPORT.md
+│   ├── NPU_AGENT_V2_REPORT.md
+│   └── NPU_AGENT_V21_BENCHMARK.md
 └── requirements.txt
 ```

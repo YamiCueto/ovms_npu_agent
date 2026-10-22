@@ -1,0 +1,10 @@
+# Dependencias NPU Agent Lab v2
+# Todas las dependencias de nucleo son stdlib de Python 3.10+.
+# El entorno virtual esta en C:\LLM\openvino-lab\.venv
+
+# Opcional: SDK oficial MCP (si se desea usar en lugar del cliente raw)
+# mcp>=1.0.0
+
+# Ya instalado en el venv:
+# anyio>=4.0.0
+# httpx2>=2.0.0

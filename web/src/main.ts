@@ -50,6 +50,11 @@ class App implements OnInit, OnDestroy {
   async newSession(){this.session=(await this.api<{session_id:string}>('/sessions','POST',{})).session_id;sessionStorage.setItem('npu-session',this.session);}
   async refresh(){const [status,traces]=await Promise.all([this.api<Status>('/status'),this.api<Trace[]>('/runs')]);this.status.set(status);this.traces.set(traces);}
   async poll(){if(this.polling)return;this.polling=true;try{await this.refresh();const b=this.bench();if(b&&!b.done)this.bench.set(await this.api<Bench>('/benchmarks/'+b.id));}catch(e){this.status.set(null);this.fail(e);}finally{this.polling=false;}}
+  onPromptKeydown(event: KeyboardEvent){
+    if(event.key !== 'Enter' || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.isComposing)return;
+    event.preventDefault();
+    if(!event.repeat)void this.send();
+  }
   async send(){if(!this.text.trim()||this.busy())return;this.error.set('');const text=this.text;this.processing.set(true);this.started=Date.now();this.elapsed.set(0);
     try{const run=await this.api<{run_id:string}>('/runs','POST',{session_id:this.session,text,mode:this.mode});this.text='';this.messages.update(m=>[...m,{role:'user',content:text}]);this.events.set([]);this.activeRun=run.run_id;sessionStorage.setItem('npu-run',run.run_id);this.watch(run.run_id);}
     catch(e){this.processing.set(false);this.fail(e);}
